@@ -1,9 +1,9 @@
 from yxutil import have_file, read_list_file
 from yxseq import read_fasta_by_faidx
 from statsmodels.sandbox.stats.multicomp import multipletests
-from .qqplot import quantile_quantile_plot
-from .manhattan import manhattan_plot
-from .geogenoplot import allele_corr_plot
+from .plot.qqplot import quantile_quantile_plot
+from .plot.manhattan import manhattan_plot
+from .plot.geogenoplot import allele_corr_plot
 import matplotlib.pyplot as plt
 import pandas as pd
 import pysam

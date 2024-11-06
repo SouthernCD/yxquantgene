@@ -32,5 +32,6 @@ plt.rcParams['lines.linewidth'] = 2
 plt.rcParams['lines.color'] = '#000000'
 
 from .gwas import Gemma_Job, Variant
-from .qqplot import quantile_quantile_plot as qqplot
-from .manhattan import manhattan_plot
+from .plot.qqplot import quantile_quantile_plot as qqplot
+from .plot.manhattan import manhattan_plot
+from .plot.geogenoplot import allele_corr_plot

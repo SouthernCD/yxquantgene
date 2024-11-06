@@ -4,6 +4,12 @@ def get_versions():
 
 versions = [
     {
+        "number": "0.0.2",
+        "features": [
+            "1. rebuild the project",
+        ],
+    },
+    {
         "number": "0.0.1",
         "features": [
             "1. init",
