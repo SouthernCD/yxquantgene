@@ -39,3 +39,4 @@ from .metrics.ld import calculate_LD_for_vcf_file
 from .metrics.ibs import get_IBS_matrix_broadcasting_chunk_parallel as get_IBS_matrix
 from .metrics.ibs import get_IBS_distance_matrix
 from .utils.vcf import *
+from .utils.format import *
