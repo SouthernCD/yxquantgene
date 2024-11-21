@@ -31,12 +31,13 @@ plt.rcParams['ytick.major.width'] = 2
 plt.rcParams['lines.linewidth'] = 2
 plt.rcParams['lines.color'] = '#000000'
 
-from .gwas import Gemma_Job, Variant
+from .analyses.gwas import Gemma_Job, Variant
 from .plot.qqplot import quantile_quantile_plot as qqplot
 from .plot.manhattan import manhattan_plot
 from .plot.geogenoplot import allele_corr_plot
-from .metrics.ld import calculate_LD_for_vcf_file
+from .metrics.ld import build_LD_db
 from .metrics.ibs import get_IBS_matrix_broadcasting_chunk_parallel as get_IBS_matrix
 from .metrics.ibs import get_IBS_distance_matrix
 from .utils.vcf import *
-from .utils.format import *
+from .utils.utils import *
+from .analyses.psa import psa_snp_pruner

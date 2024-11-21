@@ -1,200 +1,280 @@
 import numpy as np
-from yxmath.split import split_sequence_to_bins, bin_index_to_range
-from yxutil import multiprocess_running
-from cyvcf2 import VCF
-from yxseq import read_fasta_by_faidx
-from itertools import combinations
+import pandas as pd
+from yxmath.split import split_sequence_to_bins, bin_index_to_range, cover_bin_index
+from yxutil import mkdir, log_print, multiprocess_running
+from yxquantgene.utils.vcf import get_genotype_matrix_from_vcf, get_chr_list_from_var_stat_h5
 
 """
 This module provides functions to calculate Linkage Disequilibrium (LD) matrix.
 """
 
 
-def calculate_LD(genotype_matrix):
+def calculate_LD(query_genotype_matrix, subject_genotype_matrix, query_pos_list, subject_pos_list, ld_matrix_h5=None):
     """
-    Calculate LD matrix for a genotype matrix.
-    genotype_matrix.shape = (n_variants, n_samples)
-    genotype_matrix = np.array([[0, 0, 1, 1],
-                                [0, 1, 0, 1],
-                                [0, 0, 0, 1],
-                                [0, 1, 1, 1],
-                                [0, 0, 1, 1]])
+    Calculate LD between each row of query_genotype_matrix and each row of subject_genotype_matrix.
+
+    # 示例用法
+    query_genotype_matrix = np.array([[1, 0, 0, 0],
+                                    [0, 1, 0, 1],
+                                    [0, 0, 0, 1],
+                                    [0, 0, 1, 1]])
+    subject_genotype_matrix = np.array([[0, 0, 1, 1],
+                                        [0, 1, 0, 1],
+                                        [0, 0, 0, 1],
+                                        [0, 1, 1, 1],
+                                        [0, 0, 1, 1]])    
     """
-    correlation_matrix = np.corrcoef(genotype_matrix)
-    LD_matrix = correlation_matrix ** 2
-    return LD_matrix
+    # 计算相关系数矩阵
+    combined_matrix = np.vstack(
+        (query_genotype_matrix, subject_genotype_matrix))
+    correlation_matrix = np.corrcoef(combined_matrix)
+
+    # 提取所需的相关系数
+    n_query = query_genotype_matrix.shape[0]
+    n_subject = subject_genotype_matrix.shape[0]
+
+    # 相关系数矩阵的前 n_query 行和后 n_subject 列对应的子矩阵
+    result_matrix = correlation_matrix[:n_query, n_query:n_query + n_subject]
+
+    ld_matrix = result_matrix ** 2
+
+    if ld_matrix_h5 is not None:
+        ld_df = pd.DataFrame(ld_matrix, index=query_pos_list,
+                             columns=subject_pos_list)
+        ld_df.to_hdf(ld_matrix_h5, key='ld_matrix')
+        return ld_matrix_h5
+    else:
+        return ld_matrix
 
 
-def calculate_LD_by_window(genotype_matrix, window_size=10000, n_jobs=8):
+def get_range_genotype_matrix(genotype_matrix, var_df, start, end):
     """
-    Calculate LD matrix for a genotype matrix by window, matrix should from the same chromosome.
-    genotype_matrix.shape = (n_variants, n_samples)
-    genotype_matrix = np.array([[0, 0, 1, 1],
-                                [0, 1, 0, 1],
-                                [0, 0, 0, 1],
-                                [0, 1, 1, 1],
-                                [0, 0, 1, 1],
-                                [0, 0, 1, 1],
-                                [0, 1, 0, 1],
-                                [0, 0, 0, 1],
-                                [0, 1, 1, 1],
-                                [0, 0, 1, 1],
-                                [0, 0, 1, 1]])
+    Get genotype matrix from a VCF file.
     """
-
-    n_variants, n_samples = genotype_matrix.shape
-
-    args_dict = {}
-
-    for i, start_tmp, end_tmp in split_sequence_to_bins(n_variants-1, window_size, start=0):
-        genotype_matrix_window = genotype_matrix[start_tmp:end_tmp+1, :]
-
-        args_dict[i] = (genotype_matrix_window,)
-
-    mlt_dict = multiprocess_running(calculate_LD, args_dict, n_jobs)
-
-    LD_matrix_dict = {i: mlt_dict[i]['output'] for i in mlt_dict}
-
-    return LD_matrix_dict
+    range_var_df = var_df[(var_df['POS'] >= start) & (var_df['POS'] <= end)]
+    range_genotype_matrix = genotype_matrix[range_var_df.index]
+    return range_genotype_matrix, list(range_var_df['POS'])
 
 
-def get_chromosome_info(fasta_file):
-    fa_dict = read_fasta_by_faidx(fasta_file)
-    chrom_len = {}
-    for i in fa_dict:
-        chrom_len[i] = fa_dict[i].len()
-    return chrom_len
+def build_LD_db(input_vcf_file, var_stat_h5_file, ld_output_dir, window_size=150000):
+    mkdir(ld_output_dir, False)
+    chr_list = get_chr_list_from_var_stat_h5(var_stat_h5_file)
 
+    for chr_id in chr_list:
+        log_print(f'Processing {chr_id}')
+        var_df = pd.read_hdf(var_stat_h5_file, key=chr_id)
+        genotype_matrix = get_genotype_matrix_from_vcf(input_vcf_file, chr_id)
 
-def calculate_LD_for_vcf_file(vcf_file, ref_genome_fa, output_prefix, window_size=10000, min_maf=0.1, max_missf=0.5, r2_threshold=0.5):
-    vcf = VCF(vcf_file)
-    chrom_len_dict = get_chromosome_info(ref_genome_fa)
-    chrom_len_dict = {i: chrom_len_dict[i] for i in vcf.seqnames}
+        if len(var_df) == 0:
+            continue
 
-    ld_output_file = output_prefix + '.win%d.maf%.2f.miss%.2f.ld' % (
-        window_size, min_maf, max_missf)
-    var_info_output_file = output_prefix + '.win%d.maf%.2f.miss%.2f.var_info' % (
-        window_size, min_maf, max_missf)
-    ld_representative_file = output_prefix + '.win%d.maf%.2f.miss%.2f.rq%.2f.ld.nr.rep' % (
-        window_size, min_maf, max_missf, r2_threshold)
-    ld_remove_file = output_prefix + '.win%d.maf%.2f.miss%.2f.rq%.2f.ld.nr.remove' % (
-        window_size, min_maf, max_missf, r2_threshold)
+        chr_len = var_df.iloc[-1]['POS'].astype(int)
 
-    ld_output_file_handle = open(ld_output_file, 'w')
-    var_info_output_file_handle = open(var_info_output_file, 'w')
-    ld_representative_file_handle = open(ld_representative_file, 'w')
-    ld_remove_file_handle = open(ld_remove_file, 'w')
+        # split sequence to bins
+        w_idx_list = [i for i, s, e in split_sequence_to_bins(
+            chr_len, window_size, start=1)]
 
-    num = 0
-    for chr_id in chrom_len_dict:
-        chrom_len = chrom_len_dict[chr_id]
-        for _, s, e in split_sequence_to_bins(chrom_len, window_size, start=1):
-            print(f'Processing {chr_id}:{s}-{e}')
+        win_pair_list = []
+        for w_idx in w_idx_list:
+            l_w_idx = w_idx - 1
+            r_w_idx = w_idx + 1
+            row_idx = [w_idx]
+            if l_w_idx >= 0:
+                row_idx = [l_w_idx] + row_idx
+            if r_w_idx <= len(w_idx_list) - 1:
+                row_idx = row_idx + [r_w_idx]
 
-            genotypes = []
-            var_info_dict = {}
-            num = 0
-            for v in vcf(f'{chr_id}:{s}-{e}'):
-                variant_genotypes = [
-                    gt[0] + gt[1] if gt[0] is not None and gt[1] is not None else -1 for gt in v.genotypes]
-                missf = variant_genotypes.count(-1) / len(variant_genotypes)
-                no_miss_sample = len(variant_genotypes) - \
-                    variant_genotypes.count(-1)
-                maf = min(variant_genotypes.count(0) / no_miss_sample,
-                          (variant_genotypes.count(1) + variant_genotypes.count(2)) / no_miss_sample)
-                # print((v.ID, v.CHROM, v.POS, v.REF, v.ALT[0], missf, maf))
-                if missf <= max_missf and maf >= min_maf:
-                    genotypes.append(variant_genotypes)
-                    var_info_dict[num] = (
-                        v.ID, v.CHROM, v.POS, v.REF, v.ALT[0], missf, maf)
-                    num += 1
-            genotype_matrix = np.array(genotypes)
-            if len(genotype_matrix) == 0:
-                continue
-            elif len(genotype_matrix) == 1:
-                v_ID, v_CHROM, v_POS, v_REF, v_ALT, v_missf, v_maf = var_info_dict[0]
-                var_info_output_file_handle.write(
-                    f'{v_ID}\t{v_CHROM}\t{v_POS}\t{v_REF}\t{v_ALT}\t{v_missf}\t{v_maf}\n')
-                ld_representative_file_handle.write(f'{v_ID}\n')
+            for r_idx in row_idx:
+                i, j = sorted([w_idx, r_idx])
+                win_pair_list.append((i, j))
 
-            elif len(genotype_matrix) > 1:
-                LD_matrix = calculate_LD(genotype_matrix)
-
-                linked_pair_list = []
-                for i, j in combinations(range(len(genotype_matrix)), 2):
-                    v1_ID, v1_CHROM, v1_POS, v1_REF, v1_ALT, v1_missf, v1_maf = var_info_dict[i]
-                    v2_ID, v2_CHROM, v2_POS, v2_REF, v2_ALT, v2_missf, v2_maf = var_info_dict[j]
-                    ld_output_file_handle.write(
-                        f'{v1_ID}\t{v2_ID}\t{LD_matrix[i,j]}\n')
-                    if LD_matrix[i, j] >= r2_threshold:
-                        linked_pair_list.append(tuple(sorted([v1_ID, v2_ID])))
-
-                for i in var_info_dict:
-                    v_ID, v_CHROM, v_POS, v_REF, v_ALT, v_missf, v_maf = var_info_dict[i]
-                    var_info_output_file_handle.write(
-                        f'{v_ID}\t{v_CHROM}\t{v_POS}\t{v_REF}\t{v_ALT}\t{v_missf}\t{v_maf}\n')
-
-                representative_variants = []
-                remove_variants = []
-
-                for i in sorted(var_info_dict, key=lambda x: var_info_dict[x][6], reverse=True):
-                    v_ID, v_CHROM, v_POS, v_REF, v_ALT, v_missf, v_maf = var_info_dict[i]
-                    linked_variants = get_linked_variants(
-                        v_ID, linked_pair_list)
-                    if len(set(representative_variants) & set(linked_variants)) == 0:
-                        representative_variants.append(v_ID)
-                    else:
-                        remove_variants.append(v_ID)
-
-                var_info_dict = {
-                    var_info_dict[i][0]: var_info_dict[i] for i in var_info_dict}
-
-                representative_variants = list(set(representative_variants))
-                representative_variants = sorted(
-                    representative_variants, key=lambda x: var_info_dict[x][2], reverse=False)
-                remove_variants = list(set(remove_variants))
-                remove_variants = sorted(
-                    remove_variants, key=lambda x: var_info_dict[x][2], reverse=False)
-
-                for i in representative_variants:
-                    ld_representative_file_handle.write(f'{i}\n')
-                for i in remove_variants:
-                    ld_remove_file_handle.write(f'{i}\n')
-
+        # build LD matrix
+        win_pair_list = sorted(list(set(win_pair_list)))
+        ld_dict = {}
+        num = 0
+        for q_idx, s_idx in win_pair_list:
+            q_s, q_e = bin_index_to_range(q_idx, window_size, start=1)
+            s_s, s_e = bin_index_to_range(s_idx, window_size, start=1)
+            query_genotype_matrix, query_pos_list = get_range_genotype_matrix(
+                genotype_matrix, var_df, q_s, q_e)
+            subject_genotype_matrix, subject_pos_list = get_range_genotype_matrix(
+                genotype_matrix, var_df, s_s, s_e)
+            ld_matrix_h5 = f'{ld_output_dir}/{chr_id}_{q_idx}_{s_idx}.ld_matrix.h5'
+            ld_dict[(q_idx, s_idx)] = calculate_LD(
+                query_genotype_matrix, subject_genotype_matrix, query_pos_list, subject_pos_list, ld_matrix_h5)
             num += 1
-
-            # if num > 10:
-            #     break
-
-    ld_output_file_handle.close()
-    var_info_output_file_handle.close()
-    ld_representative_file_handle.close()
-    ld_remove_file_handle.close()
+            log_print(
+                f'Processing {chr_id} {num}/{len(win_pair_list)} {num/len(win_pair_list) * 100:.3f}%')
 
 
-def get_linked_variants(v_ID, linked_pair_list):
+def get_LD_from_db(chr_id, pos1, pos2, db_win_size, ld_db_dir):
     """
-    v_ID = '1'
-    linked_pair_list = [('1', '2'), ('3', '1'), ('2', '3'), ('2', '4'), ('3', '4'), ('1', '1')]
+    Get LD between two positions.
     """
-    linked_variants = []
-    for v1, v2 in linked_pair_list:
-        if v1 == v_ID:
-            linked_variants.append(v2)
-        elif v2 == v_ID:
-            linked_variants.append(v1)
-    linked_variants = list(set(linked_variants))
-    if v_ID in linked_variants:
-        linked_variants.remove(v_ID)
-    return linked_variants
+    q_idx = cover_bin_index(pos1, db_win_size, start=1)
+    s_idx = cover_bin_index(pos2, db_win_size, start=1)
+
+    q_idx, s_idx = sorted([q_idx, s_idx])
+    ld_matrix_h5 = f'{ld_db_dir}/{chr_id}_{q_idx}_{s_idx}.ld_matrix.h5'
+    ld_df = pd.read_hdf(ld_matrix_h5, key='ld_matrix')
+    pos1, pos2 = sorted([pos1, pos2])
+    ld = ld_df.loc[pos1, pos2]
+
+    return ld
 
 
+def get_LD_for_pairlist_from_db(chr_id, pos_pair_list, db_win_size, ld_db_dir):
+    """
+    Get LD for a list of position pairs.
+    """
+    pos_pair_list = [(pos1, pos2) if pos1 < pos2 else (pos2, pos1)
+                     for pos1, pos2 in pos_pair_list]
+    # pos_pair_dict = {(pos1, pos2): None if pos1 < pos2 else (
+    #     pos2, pos1) for pos1, pos2 in pos_pair_list}
+    pos_pair_dict = {(pos1, pos2): (cover_bin_index(pos1, db_win_size, start=1), cover_bin_index(
+        pos2, db_win_size, start=1))for pos1, pos2 in pos_pair_list}
+    ld_idx_list = list(set(pos_pair_dict.values()))
+
+    ld_df_dict = {}
+    for ld_id_pair in ld_idx_list:
+        ld_df_dict[ld_id_pair] = pd.read_hdf(
+            f'{ld_db_dir}/{chr_id}_{ld_id_pair[0]}_{ld_id_pair[1]}.ld_matrix.h5', key='ld_matrix')
+
+    ld_dict = {p: ld_df_dict[(
+        pos_pair_dict[p][0], pos_pair_dict[p][1])].loc[p[0], p[1]] for p in pos_pair_dict}
+
+    return ld_dict
+
+
+def get_LD_decay_for_one_win(win_idx, flank_win_idx_list, var_pos_idx_df, ld_db_path, chr_id, max_decay_size):
+    """
+    windows size of LD database have to bigger than half of max_decay_size
+    var_pos_idx_df = var_df.reset_index().set_index('POS')
+    var_pos_idx_df
+    ld_db_path = "/lustre/home/xuyuxing/Work/Jesse/local_adaptation.2.0/1.reseq_GWAS/population_structure/snp_ld"
+    chr_id = "Chr01"
+    win_idx = 1
+    flank_win_idx_list = [1, 2]
+    max_decay_size = 500000        
+    """
+
+    # 读取左中右三个窗口的 LD 矩阵
+    ld_df_list = []
+    for r_idx in flank_win_idx_list:
+        if r_idx >= win_idx:
+            ld_chunk_matrix_h5 = f'{ld_db_path}/{chr_id}_{win_idx}_{r_idx}.ld_matrix.h5'
+            ld_df = pd.read_hdf(ld_chunk_matrix_h5, key='ld_matrix')
+            ld_df = ld_df.T
+        else:
+            ld_chunk_matrix_h5 = f'{ld_db_path}/{chr_id}_{r_idx}_{win_idx}.ld_matrix.h5'
+            ld_df = pd.read_hdf(ld_chunk_matrix_h5, key='ld_matrix')
+            ld_df
+        ld_df_list.append(ld_df)
+    # 合并 LD 矩阵，并筛选出有效行和列
+    ld_df = pd.concat(ld_df_list, axis=0)
+    ld_df = ld_df.T
+
+    valid_rows = ld_df.index.intersection(var_pos_idx_df.index)
+    valid_cols = ld_df.columns.intersection(var_pos_idx_df.index)
+    ld_df = ld_df.loc[valid_rows, valid_cols]
+
+    # 遍历 LD 矩阵的每一行（目标窗口中的所有变异位点）
+
+    dist_vs_ld_df_list = []
+    num = 0
+    for q_pos in ld_df.index:
+        q_pos_ld_df = pd.DataFrame(
+            {'dist': ld_df.loc[q_pos].index - q_pos, 'ld': ld_df.loc[q_pos].values})
+        q_pos_ld_df = q_pos_ld_df[(q_pos_ld_df['dist'] > 0) & (
+            q_pos_ld_df['dist'] < max_decay_size)]
+        dist_vs_ld_df_list.append(q_pos_ld_df)
+        num += 1
+        # print(f"Processing {chr_id} {win_idx} {num}/{len(ld_df.index)} {num/len(ld_df.index) * 100:.3f}%")
+
+    dist_vs_ld_df = pd.concat(dist_vs_ld_df_list, ignore_index=True)
+
+    dist_vs_ld_df[(dist_vs_ld_df['dist'] <= 450) & (
+        dist_vs_ld_df['dist'] >= 350)]['ld'].median()
+
+    return dist_vs_ld_df
+
+
+def get_chr_LD_dist_df(chr_id, var_stat_h5_file, ld_db_path, ld_db_win_size=150000, max_decay_size=150000, max_missing_rate=0.5, min_maf=0.01, max_het_rate=0.5, threads=20):
+    # 读取变异位点信息
+    var_df = pd.read_hdf(var_stat_h5_file, key=chr_id)
+    # prune variants based on var_stat
+    if max_missing_rate is not None:
+        var_df = var_df[(var_df['MISSF'] <= max_missing_rate)]
+    if min_maf is not None:
+        var_df = var_df[(var_df['MAF'] >= min_maf)]
+    if max_het_rate is not None:
+        var_df = var_df[(var_df['HETF'] <= max_het_rate)]
+
+    # 获取染色体长度
+    chr_len = var_df.iloc[-1]['POS'].astype(int)
+
+    # 将变异位点信息重置索引并设置 POS 为索引
+    var_pos_idx_df = var_df.reset_index().set_index('POS')
+
+    # 将染色体序列分割成窗口
+    w_idx_list = [i for i, s, e in split_sequence_to_bins(
+        chr_len, ld_db_win_size, start=1)]
+
+    # 遍历每个窗口
+    args_dict = {}
+    dist_vs_ld_df = pd.DataFrame({'dist': [], 'ld': []})
+    for w_idx in w_idx_list:
+        # 获取右窗口索引
+        # l_w_idx = w_idx - 1
+        r_w_idx = w_idx + 1
+        row_idx = [w_idx]
+        # if l_w_idx >= 0:
+        #     row_idx = [l_w_idx] + row_idx
+        if r_w_idx <= len(w_idx_list) - 1:
+            row_idx = row_idx + [r_w_idx]
+        args_dict[w_idx] = (w_idx, row_idx, var_pos_idx_df,
+                            ld_db_path, chr_id, max_decay_size)
+        # log_print(
+        #     f"Processing {chr_id} {w_idx}/{len(w_idx_list)} {w_idx/len(w_idx_list) * 100:.3f}%")
+
+        # dist_vs_ld_df = pd.concat([dist_vs_ld_df, get_LD_decay_for_one_win(
+        #     w_idx, row_idx, var_pos_idx_df, ld_db_path, chr_id, max_decay_size)], ignore_index=True)
+
+    # 并行运行
+    mlt_dict = multiprocess_running(
+        get_LD_decay_for_one_win, args_dict, threads)
+
+    dist_vs_ld_df_list = [mlt_dict[i]['output'] for i in mlt_dict]
+    dist_vs_ld_df = pd.concat(dist_vs_ld_df_list, ignore_index=True)
+
+    return dist_vs_ld_df
+
+
+def get_chr_LD_decay_curve(chr_id, var_stat_h5_file, ld_db_path, bin_size=100, ld_db_win_size=150000, max_decay_size=150000, max_missing_rate=0.5, min_maf=0.01, max_het_rate=0.5, threads=20):
+    dist_vs_ld_df = get_chr_LD_dist_df(chr_id, var_stat_h5_file, ld_db_path, ld_db_win_size,
+                                       max_decay_size, max_missing_rate, min_maf, max_het_rate, threads)
+
+    ld_decay_df = pd.DataFrame({'start': [], 'end': [], 'mean': [], 'median': [], 'std': []})
+    for i, s, e in split_sequence_to_bins(max_decay_size, bin_size, start=1):
+        print(f"Processing {s}-{e}")
+        bin_dist_vs_ld_df = dist_vs_ld_df[(dist_vs_ld_df['dist'] <= e) & (
+            dist_vs_ld_df['dist'] >= s)]
+        median = bin_dist_vs_ld_df['ld'].median()
+        mean = bin_dist_vs_ld_df['ld'].mean()
+        std = bin_dist_vs_ld_df['ld'].std()
+        ld_decay_df = pd.concat([ld_decay_df, pd.DataFrame({'start': [s], 'end': [e], 'mean': [mean], 'median': [median], 'std': [std]})])
+
+    return ld_decay_df
 
 if __name__ == '__main__':
-    ref_genome_fa = '/lustre/home/xuyuxing/Work/Jesse/local_adaptation/0.reference/Sbicolor.v5.1/Sbicolor_730_v5.0.fa'
-    vcf_file = '/lustre/home/xuyuxing/Work/Jesse/local_adaptation/0.reference/Data/reseq/landraces/Sbv5.1.landraces.snp.vcf.gz'
 
-    output_prefix = '/lustre/home/xuyuxing/Work/Jesse/local_adaptation/0.reference/Data/reseq/landraces/Sbv5.1.landraces.snp'
-
-    calculate_LD_for_vcf_file(vcf_file, ref_genome_fa, output_prefix,
-                              window_size=10000, min_maf=0.1, max_missf=0.5, r2_threshold=0.5)
+    chr_id = "Chr01"
+    var_stat_h5_file = "/lustre/home/xuyuxing/Work/Jesse/local_adaptation.2.0/1.reseq_GWAS/population_structure/landraces_snp_stat.h5"
+    ld_db_path = "/lustre/home/xuyuxing/Work/Jesse/local_adaptation.2.0/1.reseq_GWAS/population_structure/snp_ld"
+    ld_db_win_size = 500000
+    max_decay_size = 500000
+    bin_size = 100
+    max_missing_rate = 0.5
+    min_maf = 0.01
+    max_het_rate = 0.1
+    threads = 20

@@ -67,7 +67,7 @@ def get_IBS_distance_matrix(IBS_matrix):
 
 if __name__ == '__main__':
     from yxquantgene.utils.vcf import get_genotype_matrix_from_vcf
-    from yxquantgene.utils.format import write_matrix_to_file
+    from yxquantgene.utils.utils import write_matrix_to_file
 
     genotype_matrix = get_genotype_matrix_from_vcf(vcf_file)
     ibs_matrix = get_IBS_matrix_broadcasting_chunk_parallel(genotype_matrix)
