@@ -180,7 +180,7 @@ def psa_snp_pruner(input_vcf_file, var_stat_h5_file, ld_db_path, output_prefix, 
     """
     Prune variants based on LD.
     """
-    output_prefix = output_prefix + f'.win{window_size}.'
+    output_prefix = output_prefix + f'.win{ld_decay_size}.'
     if max_missing_rate is not None:
         output_prefix = output_prefix + f'miss{max_missing_rate}.'
     if min_maf is not None:
@@ -221,7 +221,7 @@ def psa_snp_pruner(input_vcf_file, var_stat_h5_file, ld_db_path, output_prefix, 
 
         chr_rep_var_df_dict[chr_id] = rep_var_df
 
-    output_var_stat_h5_file = output_prefix + '.var_stat.h5'
+    output_var_stat_h5_file = output_prefix + 'var_stat.h5'
 
     for chr_id in chr_rep_var_df_dict:
         chr_rep_var_df_dict[chr_id].to_hdf(
@@ -229,12 +229,12 @@ def psa_snp_pruner(input_vcf_file, var_stat_h5_file, ld_db_path, output_prefix, 
 
     pruned_var_list = []
     for chr_id in chr_rep_var_df_dict:
-        pruned_var_list.extend(chr_rep_var_df_dict[chr_id]['POS'].tolist())
+        pruned_var_list.extend(chr_rep_var_df_dict[chr_id]['ID'].tolist())
 
     print(f'After all pruning, {len(pruned_var_list)} variants left.')
 
     print('Extracting sub VCF file...')
-    output_vcf_file = output_prefix + '.vcf.gz'
+    output_vcf_file = output_prefix + 'vcf.gz'
     extract_subvcf_by_varIDs(input_vcf_file, pruned_var_list, output_vcf_file)
 
 if __name__ == '__main__':

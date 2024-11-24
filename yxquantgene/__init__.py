@@ -35,7 +35,7 @@ from .analyses.gwas import Gemma_Job, Variant
 from .plot.qqplot import quantile_quantile_plot as qqplot
 from .plot.manhattan import manhattan_plot
 from .plot.geogenoplot import allele_corr_plot
-from .metrics.ld import build_LD_db
+from .metrics.ld import build_LD_db, get_LD_for_pairlist_from_db, get_LD_from_db, get_LD_decay, get_half_ld_dist_for_genome
 from .metrics.ibs import get_IBS_matrix_broadcasting_chunk_parallel as get_IBS_matrix
 from .metrics.ibs import get_IBS_distance_matrix
 from .utils.vcf import *
