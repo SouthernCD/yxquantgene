@@ -15,7 +15,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     url="https://github.com/SouthernCD/yxquantgene",
     include_package_data = True,
-
+    
     # entry_points={
     #     "console_scripts": ["HugeP2G = hugep2g.cli:main"]
     # },    

@@ -245,7 +245,7 @@ if __name__ == '__main__':
     ref_genome_file = '/lustre/home/xuyuxing/Work/Jesse/local_adaptation/0.reference/Sbicolor.v5.1/Sbicolor_730_v5.0.fa'
     var_stat_h5_file = '/lustre/home/xuyuxing/Work/Jesse/local_adaptation/1.georef/population_structure/reseq_africa_landraces/target_samples.var_stat.h5'
 
-    build_var_stat_table(test_vcf_file, ref_genome_file, var_stat_h5_file)
+    build_var_stat_table(test_vcf_file, var_stat_h5_file)
 
     # build LD database
     window_size = 150000

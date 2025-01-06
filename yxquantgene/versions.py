@@ -4,6 +4,15 @@ def get_versions():
 
 versions = [
     {
+        "number": "0.0.5",
+        "features": [
+            "1. add WZA analysis",
+            "2. add allele statistics",
+            "3. rebuild GWAS analysis",
+            "4. add GWAS wrapper",
+        ],
+    },
+    {
         "number": "0.0.4",
         "features": [
             "1. add more LD analysis functions",

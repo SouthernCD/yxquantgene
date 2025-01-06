@@ -1,13 +1,38 @@
 import numpy as np
-from yxseq import read_fasta_by_faidx
+from yxseq import read_fasta_by_faidx, read_gff_file
+from yxutil import have_file
+import pandas as pd
 
 
-def get_chromosome_info(fasta_file):
-    fa_dict = read_fasta_by_faidx(fasta_file)
-    chrom_len = {}
-    for i in fa_dict:
-        chrom_len[i] = fa_dict[i].len()
-    return chrom_len
+def get_chr_len_df(fasta_file):
+    chrom_len_csv = f'{fasta_file}.ChrLen.csv'
+    if have_file(chrom_len_csv):
+        chrom_len_df = pd.read_csv(chrom_len_csv)
+    else:
+        fa_dict = read_fasta_by_faidx(fasta_file)
+        chrom_len = {}
+        for i in fa_dict:
+            chrom_len[i] = fa_dict[i].len()
+        chrom_len_df = pd.DataFrame(chrom_len.items(), columns=['CHROM', 'LEN'])
+        chrom_len_df.to_csv(chrom_len_csv, index=False)
+    return chrom_len_df
+
+
+def get_gene_range_df(gff_file):
+    gene_range_csv = f'{gff_file}.GeneRange.csv'
+    if have_file(gene_range_csv):
+        gene_range_df = pd.read_csv(gene_range_csv)
+    else:
+        gene_dict = read_gff_file(gff_file)['gene']
+        gene_id_list = list(gene_dict.keys())
+        gene_range_df = pd.DataFrame()
+        gene_range_df['GENE'] = gene_id_list
+        gene_range_df['CHROM'] = [gene_dict[i].chr_id for i in gene_id_list]
+        gene_range_df['START'] = [gene_dict[i].start for i in gene_id_list]
+        gene_range_df['END'] = [gene_dict[i].end for i in gene_id_list]
+        gene_range_df['STRAND'] = [gene_dict[i].strand for i in gene_id_list]
+        gene_range_df.to_csv(gene_range_csv, index=False)
+    return gene_range_df
 
 
 def write_matrix_to_file(matrix, file_name):

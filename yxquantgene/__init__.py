@@ -1,4 +1,7 @@
 import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
 
 # 设置图像的大小
 plt.rcParams['figure.figsize'] = (6, 6)
@@ -32,8 +35,10 @@ plt.rcParams['lines.linewidth'] = 2
 plt.rcParams['lines.color'] = '#000000'
 
 from .analyses.gwas import Gemma_Job, Variant
+from .analyses.gwas2 import GWAS_Job, GeneGWAS_JOB, PermGWAS_JOB
+from .metrics.wza import gene_wza_pipeline
 from .plot.qqplot import quantile_quantile_plot as qqplot
-from .plot.manhattan import manhattan_plot
+from .plot.manhattan import genomewide_gwas_plot as manhattan_plot
 from .plot.geogenoplot import allele_corr_plot
 from .metrics.ld import build_LD_db, get_LD_for_pairlist_from_db, get_LD_from_db, get_LD_decay, get_half_ld_dist_for_genome
 from .metrics.ibs import get_IBS_matrix_broadcasting_chunk_parallel as get_IBS_matrix

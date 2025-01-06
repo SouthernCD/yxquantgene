@@ -202,7 +202,8 @@ def get_LD_decay_mean_for_one_win(win_idx, flank_win_idx_list, var_pos_idx_df, l
     valid_cols = ld_df.columns.intersection(var_pos_idx_df.index)
     ld_df = ld_df.loc[valid_rows, valid_cols]
 
-    bin_stats = get_LD_decay_mean_from_ld_df(ld_df, max_decay_size=max_decay_size, curve_bin_size=curve_bin_size)
+    bin_stats = get_LD_decay_mean_from_ld_df(
+        ld_df, max_decay_size=max_decay_size, curve_bin_size=curve_bin_size)
 
     return bin_stats
 
@@ -266,6 +267,7 @@ def get_LD_decay_mean_from_ld_df(ld_df, max_decay_size=None, curve_bin_size=100)
         # print(f"Processing {chr_id} {win_idx} {num}/{len(ld_df.index)} {num/len(ld_df.index) * 100:.3f}%")
 
     return bin_stats
+
 
 def get_LD_decay_mean_for_one_chr(chr_id, var_stat_h5_file, ld_db_path, ld_db_win_size=150000, max_decay_size=150000, curve_bin_size=100, max_missing_rate=0.5, min_maf=0.01, max_het_rate=0.5, threads=20):
     # 读取变异位点信息
@@ -350,11 +352,10 @@ def get_LD_decay(var_stat_h5_file, ld_db_path, ld_db_win_size=150000, max_decay_
 
 def get_half_ld_dist(ld_decay_df, half_ld_value=0.5):
     ld_decay_df['bin'] = ld_decay_df['bin'].apply(lambda x: x.right).values
-    
+
     if 'ld_mean' not in ld_decay_df.columns:
         ld_decay_df['ld_mean'] = ld_decay_df['ld_sum'] / ld_decay_df['count']
 
-    
     ld_decay_df = ld_decay_df.dropna()
 
     ld_decay_df = ld_decay_df.sort_values('bin')
@@ -364,11 +365,13 @@ def get_half_ld_dist(ld_decay_df, half_ld_value=0.5):
     elif all(ld_decay_df['ld_mean'] > half_ld_value):
         return ld_decay_df['bin'].max()
     else:
-        ld2dist_func = interpolate.interp1d(ld_decay_df['ld_mean'], ld_decay_df['bin'])
+        ld2dist_func = interpolate.interp1d(
+            ld_decay_df['ld_mean'], ld_decay_df['bin'])
         half_ld_dist = ld2dist_func(half_ld_value)
         return half_ld_dist
 
-def get_double_ld_df(s_win_idx,e_win_idx,ld_db_path,chr_id):
+
+def get_double_ld_df(s_win_idx, e_win_idx, ld_db_path, chr_id):
     if s_win_idx == e_win_idx:
         ld_chunk_matrix_h5 = f'{ld_db_path}/{chr_id}_{s_win_idx}_{s_win_idx}.ld_matrix.h5'
         ld_df = pd.read_hdf(ld_chunk_matrix_h5, key='ld_matrix')
@@ -383,6 +386,7 @@ def get_double_ld_df(s_win_idx,e_win_idx,ld_db_path,chr_id):
         b_df = pd.concat([se_df.T, ee_df], axis=1)
         ld_df = pd.concat([a_df, b_df], axis=0)
     return ld_df
+
 
 def get_half_ld_dist_for_one_chr(chr_id, var_stat_h5_file, ld_db_path, ld_db_win_size=150000, stat_win_size=150000, max_decay_size=150000, curve_bin_size=100, max_missing_rate=0.5, min_maf=0.01, max_het_rate=0.5, half_ld_value=0.5):
     # 读取变异位点信息
@@ -409,33 +413,37 @@ def get_half_ld_dist_for_one_chr(chr_id, var_stat_h5_file, ld_db_path, ld_db_win
     var_pos_idx_df = var_df.reset_index().set_index('POS')
 
     # 将染色体序列分割成窗口
-    stat_w_idx_list = [(i,s,e) for i, s, e in split_sequence_to_bins(
+    stat_w_idx_list = [(i, s, e) for i, s, e in split_sequence_to_bins(
         chr_len, stat_win_size, start=1)]
 
-    
     job_group_dict = {}
     for stat_w_idx, stat_s, stat_e in stat_w_idx_list:
         ld_db_s_w_idx = cover_bin_index(stat_s, ld_db_win_size, start=1)
         ld_db_e_w_idx = cover_bin_index(stat_e, ld_db_win_size, start=1)
-        job_group_dict.setdefault((ld_db_s_w_idx, ld_db_e_w_idx), []).append((stat_w_idx, stat_s, stat_e))
+        job_group_dict.setdefault((ld_db_s_w_idx, ld_db_e_w_idx), []).append(
+            (stat_w_idx, stat_s, stat_e))
 
     half_ld_dist_df = pd.DataFrame(columns=['chr_id', 'bin', 'half_ld_dist'])
 
     for ld_db_w_idxs in job_group_dict:
         s_win_idx, e_win_idx = ld_db_w_idxs
         # print(f"Processing {chr_id} {s_win_idx*ld_db_win_size}/{chr_len} {s_win_idx*ld_db_win_size/chr_len * 100:.3f}%")
-        ld_df = get_double_ld_df(s_win_idx,e_win_idx,ld_db_path,chr_id)
-        
+        ld_df = get_double_ld_df(s_win_idx, e_win_idx, ld_db_path, chr_id)
+
         for stat_w_idx, stat_s, stat_e in job_group_dict[ld_db_w_idxs]:
-            win_var_pos_idx_df = var_pos_idx_df[(var_pos_idx_df.index >= stat_s) & (var_pos_idx_df.index <= stat_e)]
+            win_var_pos_idx_df = var_pos_idx_df[(
+                var_pos_idx_df.index >= stat_s) & (var_pos_idx_df.index <= stat_e)]
             valid_rows = ld_df.index.intersection(win_var_pos_idx_df.index)
             valid_cols = ld_df.columns.intersection(win_var_pos_idx_df.index)
             stat_win_ld_df = ld_df.loc[valid_rows, valid_cols]
-            ld_decay_df = get_LD_decay_mean_from_ld_df(stat_win_ld_df, max_decay_size=max_decay_size, curve_bin_size=curve_bin_size)
-            ld_decay_df['ld_mean'] = ld_decay_df['ld_sum'] / ld_decay_df['count']
+            ld_decay_df = get_LD_decay_mean_from_ld_df(
+                stat_win_ld_df, max_decay_size=max_decay_size, curve_bin_size=curve_bin_size)
+            ld_decay_df['ld_mean'] = ld_decay_df['ld_sum'] / \
+                ld_decay_df['count']
             half_ld_dist = get_half_ld_dist(ld_decay_df, half_ld_value)
-            half_ld_dist_df = pd.concat([half_ld_dist_df, pd.DataFrame({'chr_id': [chr_id], 'bin': [(stat_s, stat_e)], 'half_ld_dist': [half_ld_dist]})], ignore_index=True)
-            
+            half_ld_dist_df = pd.concat([half_ld_dist_df, pd.DataFrame({'chr_id': [chr_id], 'bin': [
+                                        (stat_s, stat_e)], 'half_ld_dist': [half_ld_dist]})], ignore_index=True)
+
     return half_ld_dist_df
 
 
@@ -444,15 +452,17 @@ def get_half_ld_dist_for_genome(var_stat_h5_file, ld_db_path, ld_db_win_size=150
 
     args_dict = {}
     for chr_id in chr_list:
-        args_dict[chr_id] = (chr_id, var_stat_h5_file, ld_db_path, ld_db_win_size, stat_win_size, max_decay_size, curve_bin_size, max_missing_rate, min_maf, max_het_rate, half_ld_value)
-    
-    mlt_dict = multiprocess_running(get_half_ld_dist_for_one_chr, args_dict, threads)
-    half_ld_dist_df_dict = {i:mlt_dict[i]['output'] for i in mlt_dict if mlt_dict[i]['output'] is not None}
+        args_dict[chr_id] = (chr_id, var_stat_h5_file, ld_db_path, ld_db_win_size, stat_win_size,
+                             max_decay_size, curve_bin_size, max_missing_rate, min_maf, max_het_rate, half_ld_value)
+
+    mlt_dict = multiprocess_running(
+        get_half_ld_dist_for_one_chr, args_dict, threads)
+    half_ld_dist_df_dict = {i: mlt_dict[i]['output']
+                            for i in mlt_dict if mlt_dict[i]['output'] is not None}
 
     half_ld_dist_df = pd.concat(half_ld_dist_df_dict)
 
     return half_ld_dist_df
-    
 
 
 if __name__ == '__main__':
@@ -465,8 +475,9 @@ if __name__ == '__main__':
     curve_bin_size = 50
     threads = 20
     half_ld_value = 0.5
-    max_missing_rate=0.5
-    min_maf=0.1
-    max_het_rate=0.01
+    max_missing_rate = 0.5
+    min_maf = 0.1
+    max_het_rate = 0.01
 
-    half_ld_dist_df = get_half_ld_dist_for_genome(var_stat_h5_file, ld_db_path, ld_db_win_size, stat_win_size, max_decay_size, curve_bin_size, max_missing_rate, min_maf, max_het_rate, half_ld_value, threads)
+    half_ld_dist_df = get_half_ld_dist_for_genome(var_stat_h5_file, ld_db_path, ld_db_win_size, stat_win_size,
+                                                  max_decay_size, curve_bin_size, max_missing_rate, min_maf, max_het_rate, half_ld_value, threads)

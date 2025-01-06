@@ -17,7 +17,7 @@ vcf_file = 'path/to/vcf_file' # vcf file should be bgzip compressed and indexed 
 ref_genome_file = 'path/to/ref_genome_file' 
 stat_h5_file = 'path/to/output_stat_h5_file'
 
-build_var_stat_table(vcf_file, ref_genome_file, stat_h5_file)
+build_var_stat_table(vcf_file, stat_h5_file)
 ```
 
 ### 2. Filter variants by statistics
@@ -64,7 +64,7 @@ max_het_rate = 0.1
 threads = 20
 output_prefix = 'path/to/output_prefix'
 
-build_var_stat_table(input_vcf_file, ref_genome_file, stat_h5_file)
+build_var_stat_table(input_vcf_file, stat_h5_file)
 build_LD_db(input_vcf_file, stat_h5_file, snp_ld_dir, window_size=ld_db_win_size)
 psa_snp_pruner(input_vcf_file, stat_h5_file, ld_db_path, output_prefix, ld_db_win_size=ld_db_win_size, ld_decay_size=ld_decay_size, ld_r2_threshold=ld_r2_threshold, max_missing_rate=max_missing_rate, min_maf=min_maf, max_het_rate=max_het_rate, threads=threads)
 ```
